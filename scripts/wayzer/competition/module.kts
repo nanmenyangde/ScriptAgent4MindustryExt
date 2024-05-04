@@ -1,5 +1,3 @@
-@file:Import("wayzer.competition.ext.*", defaultImport = true)
-
 package wayzer.competition
 
 /**

@@ -6,7 +6,8 @@ import cf.wayzer.scriptAgent.define.annotations.Savable
 import coreLibrary.lib.CommandInfo
 import coreLibrary.lib.config
 import coreLibrary.lib.util.loop
-import coreMindustry.lib.*
+import coreMindustry.lib.game
+import coreMindustry.lib.player
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import mindustry.game.Gamemode
@@ -15,14 +16,10 @@ import mindustry.gen.Groups
 import wayzer.MapInfo
 import wayzer.MapManager
 import wayzer.VoteEvent
-import wayzer.competition.ext.PatchManager
-import mindustry.Vars.*
-import wayzer.competition.ext.MapPatch
 
 object CompetitionService {
     val script = contextScript<Competition>()
     val teams = contextScript<wayzer.map.BetterTeam>()
-    val mapPatch = contextScript<wayzer.competition.ext.Patch>()
 
     private val config get() = script.config
 
@@ -79,20 +76,6 @@ object CompetitionService {
                 }
             }
         }
-        VoteEvent.VoteCommands += CommandInfo(this, "randompatch", "添加随机突变") {
-            body {
-                if (loading || gaming) returnReply("[red]只能在准备阶段添加".with())
-                val event = VoteEvent(
-                    script!!, player!!, this@CommandInfo.description,
-                    canVote = { it.team() != teams.spectateTeam },
-                )
-                if (event.awaitResult()) {
-                    PatchManager.randomOrNull(state.rules)?.let{
-                        setPatch(it)
-                    } ?: player?.sendMessage("没有适用于当前地图的突变".with())
-                }
-            }
-        }
         VoteEvent.VoteCommands.autoRemove(this)
     }
     fun onDisable() = with(script) {
@@ -107,14 +90,4 @@ object CompetitionService {
         gaming = true
     }
 
-    fun setPatch(patch: MapPatch) {
-        mapPatch.patchesToLoad = setOf(patch)
-        val msg = """
-                    | [green]本场游戏添加突变：
-                    | [accent][gold]{mapPatch.name}[]
-                    | [gold]{mapPatch.desc}[]
-                """.trimMargin().with("mapPatch" to patch)
-        broadcast(msg, quite=true)
-        broadcast(msg, MsgType.InfoMessage, quite=true)
-    }
 }

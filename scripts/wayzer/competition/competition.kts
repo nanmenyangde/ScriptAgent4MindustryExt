@@ -1,7 +1,5 @@
 @file:Depends("wayzer/vote", "投票实现")
 @file:Depends("wayzer/maps", "地图管理")
-@file:Depends("wayzer/map/betterTeam")
-@file:Depends("wayzer/competition/ext/patch")
 @file:Depends("wayzer/ext/observer")
 @file:Depends("wayzer/ext/voteMap", soft = true)
 
@@ -9,12 +7,11 @@ package wayzer.competition
 
 import arc.util.Strings
 import cf.wayzer.placehold.PlaceHoldApi.with
+import mindustry.Vars.*
 import mindustry.game.Gamemode
 import mindustry.game.Team
 import mindustry.io.SaveIO
 import wayzer.*
-import wayzer.competition.ext.PatchManager
-import mindustry.Vars.*
 
 listenTo<GetNextMapEvent> {
     if (mapInfo !is MapInfo) return@listenTo
@@ -119,22 +116,6 @@ commands += CommandInfo(this, "lobby", "回到准备阶段") {
     body {
         CompetitionService.gaming = false
         MapManager.loadMap(MapManager.current.copy(mode = Gamemode.survival))
-    }
-}
-commands += CommandInfo(this, "patch", "添加随机突变") {
-    usage = "[突变名，不填为随机]"
-    body {
-        if (CompetitionService.loading || CompetitionService.gaming) returnReply("[red]只能在准备阶段添加".with())
-        if (arg.isEmpty()) {
-            PatchManager.randomOrNull(state.rules)?.let{
-                CompetitionService.setPatch(it)
-            } ?: player?.sendMessage("没有适用于当前地图的突变".with())
-        } else {
-            if (arg.size > 1) replyUsage()
-            PatchManager.findOrNull(arg[0])?.let {
-                CompetitionService.setPatch(it)
-            } ?: player?.sendMessage("未找到该突变".with())
-        }
     }
 }
 
