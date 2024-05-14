@@ -60,6 +60,11 @@ object BuiltinPatch {
                 bannedBlocks.add(surgeCrucible)
             }
         }
+        mapPatch("失落科技","合金冶炼厂被禁用", env=setOf(serpulo, sun), cond={ !bannedBlocks.contains(surgeSmelter) }) {
+            applyRules {
+                bannedBlocks.add(surgeSmelter)
+            }
+        }
         mapPatch("易碎核心", "核心占领关闭", cond={ coreCapture }) {
             applyRules {
                 coreCapture = false

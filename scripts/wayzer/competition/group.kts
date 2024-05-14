@@ -8,7 +8,6 @@ import cf.wayzer.placehold.PlaceHoldApi.with
 import mindustry.game.Team
 import mindustryX.events.PlayerTeamChangedEvent
 import java.io.Serializable
-import java.lang.ref.WeakReference
 
 val teams = contextScript<wayzer.map.BetterTeam>()
 
@@ -57,9 +56,6 @@ fun Player.leaveGroup() {
 }
 
 GroupChat.onLoad()
-onEnable{
-    GroupChat.onEnable()
-}
 
 listen<EventType.PlayerLeave> {
     it.player.leaveGroup()
