@@ -48,15 +48,15 @@ object GroupChat{
                 sendMessage(player!!, message, false)
             }
         }
-    }
-    fun onEnable() = with(script) {
-        val filter = Administration.ChatFilter { p, t ->
-            sendMessage(p, t, true)
-            return@ChatFilter null
-        }
-        Vars.netServer.admins.chatFilters.add(filter)
-        onDisable {
-            Vars.netServer.admins.chatFilters.remove(filter)
+        onEnable {
+            val filter = Administration.ChatFilter { p, t ->
+                sendMessage(p, t, true)
+                return@ChatFilter null
+            }
+            Vars.netServer.admins.chatFilters.add(filter)
+            onDisable {
+                Vars.netServer.admins.chatFilters.remove(filter)
+            }
         }
     }
 }
