@@ -12,7 +12,7 @@ import mindustry.maps.Map as MdtMap
 name = "基础: 地图控制与管理"
 
 val configEnableInternMaps by config.key(false, "是否开启原版内置地图")
-val nextSameMode by config.key(false, "自动换图是否选择相同模式地图,否则选择生存模式")
+val nextSameMode by config.key(true, "自动换图是否选择相同模式地图,否则选择生存模式")
 
 MapRegistry.register(this, object : MapProvider() {
     override suspend fun searchMaps(search: String?): Collection<MapInfo> {
@@ -41,7 +41,7 @@ MapRegistry.register(this, object : MapProvider() {
             'S' -> Gamemode.survival
             'C' -> Gamemode.sandbox
             'E' -> Gamemode.editor
-            else -> Gamemode.survival
+            else -> Gamemode.pvp
         }
     }
 })

@@ -79,6 +79,8 @@ val searchCache = CacheBuilder.newBuilder()
 
 MapRegistry.register(this, object : MapProvider() {
     override suspend fun searchMaps(search: String?): Collection<BaseMapInfo> {
+        return emptyList()
+        /*
         if (!tokenOk) return emptyList()
         val mappedSearch = when (search) {
             "all", "display", "site", null -> ""
@@ -95,6 +97,7 @@ MapRegistry.register(this, object : MapProvider() {
             }
         searchCache.put(mappedSearch, maps)
         return maps
+         */
     }
 
     override suspend fun findById(id: Int, reply: ((PlaceHoldString) -> Unit)?): MapInfo? {
