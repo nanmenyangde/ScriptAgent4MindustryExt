@@ -18,10 +18,11 @@ var group = mutableMapOf<String, Group>()
 fun isLeader(p: Player): Boolean {
     return group[p.uuid()]?.leader == p
 }
-fun inSameGroup(a: Player, b: Player): Boolean {
-    if (group[a.uuid()] == null) return false
-    if (group[b.uuid()] == null) return false
-    return group[a.uuid()] == group[b.uuid()]
+fun inSameGroup(players: Set<Player>): Boolean {
+    if (players.size == 1) return true
+    return players.firstOrNull()?.let {
+        group[it.uuid()]?.member?.containsAll(players) ?: false
+    } ?: false
 }
 
 export(::isLeader)
@@ -35,7 +36,7 @@ registerVarForType<Group>().apply {
 
 registerVarForType<Player>().apply {
     registerChild("group", "所在队伍", DynamicVar.obj { group[it.uuid()] })
-    registerChild("prefix.4groupName", "队伍名", DynamicVar.obj { group.getOrDefault(it.uuid(), null)?.name?.let { "[[$it]" } })
+    registerChild("prefix.2groupName", "队伍名", DynamicVar.obj { group.getOrDefault(it.uuid(), null)?.name?.let { "<$it>" } })
 }
 
 fun Group.disband() {
