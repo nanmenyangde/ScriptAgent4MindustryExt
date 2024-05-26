@@ -67,7 +67,7 @@ object MapRegistry : MapProvider() {
     suspend fun nextMapInfo(
         previous: BaseMapInfo? = null,
         mode: Gamemode = Gamemode.survival,
-        filter: String = "survive"
+        filter: String = "all"
     ): MapInfo {
         val maps = searchMaps(filter).let { maps ->
             if (maps.isNotEmpty()) return@let maps
