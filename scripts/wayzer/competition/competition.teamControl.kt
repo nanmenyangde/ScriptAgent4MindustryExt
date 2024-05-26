@@ -1,5 +1,6 @@
 package wayzer.competition
 
+import arc.Events
 import cf.wayzer.placehold.DynamicVar
 import cf.wayzer.scriptAgent.contextScript
 import cf.wayzer.scriptAgent.define.annotations.Savable
@@ -77,16 +78,21 @@ object TeamControl {
                 it.player.updateTeamName()
             }
         }
-        listen<EventType.CoreChangeEvent> {
+        listen<EventType.CoreChangeEvent> { e ->
             if (!CompetitionService.gaming) return@listen
-            val team = it.core.team
+            val team = e.core.team
             if (team == Team.derelict) return@listen
-            if (team.data().cores.none { core -> core != it.core }) {
+            if (team.data().cores.none { core -> core != e.core }) {
                 Groups.player.filter { it.team() == team }.forEach { p ->
                     teamsBak.remove(p.uuid())
                     teams.changeTeam(p, teams.spectateTeam)
                     p.name = nameBak[p.uuid()] ?: p.name
                     nameBak.remove(p.uuid())
+                }
+            }
+            allTeam.filter { it != team && !it.data().players.isEmpty }.let {
+                if (it.size == 1) {
+                    Events.fire(EventType.GameOverEvent(it.first()))
                 }
             }
         }
