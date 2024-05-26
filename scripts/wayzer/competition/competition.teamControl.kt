@@ -89,10 +89,10 @@ object TeamControl {
                     p.name = nameBak[p.uuid()] ?: p.name
                     nameBak.remove(p.uuid())
                 }
-            }
-            allTeam.filter { it != team && !it.data().players.isEmpty }.let {
-                if (it.size == 1) {
-                    Events.fire(EventType.GameOverEvent(it.first()))
+                allTeam.filter { it != team && !it.data().players.isEmpty }.let {
+                    if (it.size == 1) {
+                        Events.fire(EventType.GameOverEvent(it.first()))
+                    }
                 }
             }
         }
