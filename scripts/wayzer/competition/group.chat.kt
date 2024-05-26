@@ -19,7 +19,7 @@ object GroupChat{
             val channel = when {
                 !team && from.team().id == 255 -> "[cyan][公屏][观战]"
                 !team -> "[cyan][公屏][[${from.team().coloredName()}]"
-                inSameGroup(from, p) -> "[violet][[${group[from.uuid()]!!.name}[violet]队内]"
+                group[from.uuid()] != null && inSameGroup(setOf(from, p)) -> "[violet][[${group[from.uuid()]!!.name}[violet]队内]"
                 group[from.uuid()] == null && from.team() == teams.spectateTeam && p.team() == teams.spectateTeam -> "[violet][观战]"
                 group[from.uuid()] == null && from.team() == p.team() -> "[violet][[${from.team().chatName()}[violet]队内]"
                 p.team() == teams.spectateTeam -> "[violet][[${if(group[from.uuid()]==null) from.team().chatName() else group[from.uuid()]!!.name}[violet]队内]"

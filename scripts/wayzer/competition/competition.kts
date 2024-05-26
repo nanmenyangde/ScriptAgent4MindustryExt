@@ -29,7 +29,7 @@ listenTo<MapChangeEvent>(Event.Priority.After) {
     }
 }
 
-listen<EventType.PlayEvent> {
+listen<EventType.WorldLoadEvent> {
     if (!CompetitionService.gaming) {
         state.rules.apply {
             pvp = false
