@@ -73,7 +73,6 @@ object CompetitionService {
             if (gaming && Groups.player.isEmpty) {
                 if (prev) {
                     Events.fire(EventType.GameOverEvent(Team.derelict))
-                    cancel()
                 } else prev = true
             } else prev = false
         }

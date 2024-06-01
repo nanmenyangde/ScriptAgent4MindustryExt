@@ -91,7 +91,7 @@ fun setPatch(patch: MapPatch) {
 
 ScriptManager.getScriptNullable("wayzer/competition/competition").let {
     onEnable {
-        VoteEvent.VoteCommands += CommandInfo(this, "randompatch", "添加随机突变") {
+        VoteEvent.VoteCommands += CommandInfo(this, "patch", "添加突变") {
             body {
                 if (CompetitionService.loading || CompetitionService.gaming) returnReply("[red]只能在准备阶段添加".with())
                 val event = VoteEvent(
@@ -107,7 +107,7 @@ ScriptManager.getScriptNullable("wayzer/competition/competition").let {
         }
         VoteEvent.VoteCommands.autoRemove(this)
     }
-    contextScript<wayzer.competition.Competition>().commands += CommandInfo(this, "patch", "添加随机突变") {
+    contextScript<wayzer.competition.Competition>().commands += CommandInfo(this, "patch", "添加突变") {
         usage = "[突变名，不填为随机]"
         body {
             if (CompetitionService.loading || CompetitionService.gaming) returnReply("[red]只能在准备阶段添加".with())

@@ -11,12 +11,11 @@ import com.google.common.cache.CacheBuilder
 import coreLibrary.extApi.MongoApi
 import mindustry.game.Team
 import mindustry.gen.Iconc
-import mindustry.world.blocks.storage.CoreBlock
 import org.bson.codecs.pojo.annotations.BsonId
 import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 import org.litote.kmongo.Id
-import org.litote.kmongo.eq
 import org.litote.kmongo.and
+import org.litote.kmongo.eq
 import org.litote.kmongo.newId
 import wayzer.MapManager
 import java.time.Duration
@@ -74,7 +73,7 @@ val ratingCache = CacheBuilder.newBuilder()
 registerVarForType<Player>().apply {
     registerChild("prefix.3-rank", "显示排位分", DynamicVar.obj {
         if (!enabled) return@obj null
-        val score = ratingCache.get(it.uuid()) {
+        val rating = ratingCache.get(it.uuid()) {
             val players = depends("wayzer/competition/group")
                 ?.import<(Player) -> Set<String>>("getTeammates")?.invoke(it)
                 ?: setOf(it.uuid())
@@ -82,12 +81,13 @@ registerVarForType<Player>().apply {
                 players.getOrCreateRatingProfile(MapManager.current.id).rating
             }
         }
-        return@obj "${Iconc.statusOverclock}[gold]$score[]"
+        return@obj "${Iconc.statusOverclock}[gold]$rating[]"
     })
 }
 
 lateinit var ranks : MutableList<Pair<Team, Set<Player>>>
 onEnable {
+    ratingCache.cleanUp()
     ranks = mutableListOf()
 }
 
@@ -124,37 +124,62 @@ listen<EventType.PlayEvent> {
     }
 }
 
+/*
 val icons = listOf(
     "🥇|",
     "🥈|",
     "🥉|",
     "🏅|"
 )
-listen<EventType.PlayEvent> {
-    if (state.rules.pvp) return@listen
-    val scores = Groups.player.map {
-        it.coloredName() to
-        ratingCache.get(it.uuid()) {
-            val players = depends("wayzer/competition/group")
-                ?.import<(Player) -> Set<String>>("getTeammates")?.invoke(it)
-                ?: setOf(it.uuid())
-            runBlocking {
-                players.getOrCreateRatingProfile(MapManager.current.id).rating
+val rankCache = CacheBuilder.newBuilder()
+    .expireAfterWrite(Duration.ofMinutes(10))
+    .build<Int, List<RatingProfile>>()!!
+val rankList : String
+    get() {
+        launch(Dispatchers.IO) {
+            val ratings = rankCache.get(1) {
+                async(Dispatchers.IO) {
+                    MongoApi.Mongo.collection<RatingProfile>().collection.find(RatingProfile::map eq MapManager.current.id).toList().sortedByDescending { it.rating }
+                }.await()
+            }
+            buildString {
+                appendLine("[goldenrod]排行榜")
+                appendLine("[white]${state.map.name()}")
+                appendLine()
+                ratings.forEachIndexed { index, p ->
+                    appendLine("${icons.getOrNull(index)}${p.first}[gold] ${p.second}分")
+                }
             }
         }
-    }.sortedByDescending { it.second }.subList(0, rankLimit)
-    val msg = buildString {
-        appendLine("[goldenrod]排行榜")
-        appendLine("[white]${state.map.name()}")
-        appendLine()
-        scores.forEachIndexed { index, p ->
-            appendLine("${icons.getOrNull(index)}${p.first}[gold] ${p.second}分")
+        /* {
+            it.coloredName() to
+            ratingCache.get(it.uuid()) {
+                val players = depends("wayzer/competition/group")
+                    ?.import<(Player) -> Set<String>>("getTeammates")?.invoke(it)
+                    ?: setOf(it.uuid())
+                runBlocking {
+                    players.getOrCreateRatingProfile(MapManager.current.id).rating
+                }
+            }
+        }.sortedByDescending { it.second }.subList(0, min(Groups.player.size(), rankLimit))
+         */
+    }
+listen<EventType.PlayEvent> {
+    if (state.rules.pvp) return@listen
+    launch(Dispatchers.gamePost) {
+        Groups.player.forEach {
+            Call.label(it.con, rankList, 10 * 60f, (state.map.width/2.0).toFloat(), (state.map.height/2.0).toFloat())
         }
     }
-    Groups.player.forEach {
-        Call.label(it.con, msg, 10 * 60f, (world.width()/2.0).toFloat(), (world.height()/2.0).toFloat())
+}
+listen<EventType.PlayerJoin> {
+    if (state.rules.pvp) return@listen
+    Core.app.post {
+        Call.label(it.player.con, rankList, 10 * 60f, (state.map.width/2.0).toFloat(), (state.map.height/2.0).toFloat())
     }
 }
+
+ */
 
 listen<EventType.GameOverEvent> {
     if (!state.rules.pvp) return@listen
@@ -222,8 +247,4 @@ listen<EventType.GameOverEvent> {
         }
         ratingCache.cleanUp()
     }
-}
-
-listen<EventType.ResetEvent> {
-    ratingCache.cleanUp()
 }
