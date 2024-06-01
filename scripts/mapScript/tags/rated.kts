@@ -27,6 +27,9 @@ import kotlin.time.Duration.Companion.seconds
 
 registerMapTag("@rated")
 
+val initRating by config.key(1500, "基础分数")
+val rankLimit by config.key(10, "排行榜显示条数")
+
 val teams = contextScript<wayzer.map.BetterTeam>()
 
 data class RatingProfile (
@@ -57,7 +60,6 @@ data class TempData(val players : Set<Player>) {
     lateinit var logUser: RatingLogUser
 }
 
-val initRating by config.key(1500, "基础分数")
 
 suspend fun Set<String>.getOrCreateRatingProfile(map: Int): RatingProfile {
     return MongoApi.Mongo.collection<RatingProfile>().findOne(and(RatingProfile::map eq map, RatingProfile::players eq this))
@@ -105,26 +107,58 @@ listen<EventType.CoreChangeEvent> {
     if (team == Team.derelict) return@listen
     if (team.data().cores.none { core -> core != it.core } && !team.data().players.isEmpty) {
         ranks.add(team to team.data().players.toSet())
-        broadcast("[green]队伍[] ${team.coloredName()} [green]淘汰！排名为第[][yellow] ${allTeam.size} [][green]名[]".with())
+        broadcast("[green]队伍[] {name} [green]淘汰！排名为第[][yellow] {rank} [][green]名[]".with("name" to team.coloredName(), "rank" to allTeam.size))
     }
 }
 
 listen<EventType.PlayEvent> {
     if (!state.rules.pvp) return@listen
-    schedule(30.seconds) {
+    schedule(10.seconds) {
         allTeam.forEach { team ->
             val players = team.data().players.toSet()
             if (!(depends("wayzer/competition/group")?.import<(Set<Player>) -> Boolean>("inSameGroup")?.invoke(players)
                     ?: (players.size == 1))) {
-                return@forEach broadcast(" ${team.coloredName()} [green]队非组队状态，本局游戏不计算积分[]".with())
+                return@forEach broadcast(" {name} [green]队非组队状态，本局游戏不计算积分[]".with("name" to team.coloredName()))
             }
         }
     }
 }
 
+val icons = listOf(
+    "🥇|",
+    "🥈|",
+    "🥉|",
+    "🏅|"
+)
+listen<EventType.PlayEvent> {
+    if (state.rules.pvp) return@listen
+    val scores = Groups.player.map {
+        it.coloredName() to
+        ratingCache.get(it.uuid()) {
+            val players = depends("wayzer/competition/group")
+                ?.import<(Player) -> Set<String>>("getTeammates")?.invoke(it)
+                ?: setOf(it.uuid())
+            runBlocking {
+                players.getOrCreateRatingProfile(MapManager.current.id).rating
+            }
+        }
+    }.sortedByDescending { it.second }.subList(0, rankLimit)
+    val msg = buildString {
+        appendLine("[goldenrod]排行榜")
+        appendLine("[white]${state.map.name()}")
+        appendLine()
+        scores.forEachIndexed { index, p ->
+            appendLine("${icons.getOrNull(index)}${p.first}[gold] ${p.second}分")
+        }
+    }
+    Groups.player.forEach {
+        Call.label(it.con, msg, 10 * 60f, (world.width()/2.0).toFloat(), (world.height()/2.0).toFloat())
+    }
+}
+
 listen<EventType.GameOverEvent> {
     if (!state.rules.pvp) return@listen
-    broadcast("[green]队伍[] ${it.winner.coloredName()} [green]获胜！[]".with())
+    broadcast("[green]队伍[] {name} [green]获胜！[]".with("'name" to it.winner.coloredName()))
     ranks.add(it.winner to it.winner.data().players.toSet())
     val gameTime by PlaceHold.reference<Duration>("state.gameTime")
     var rate = 1.0
@@ -142,7 +176,7 @@ listen<EventType.GameOverEvent> {
     ranks.forEach { (team, players) ->
         if (!(depends("wayzer/competition/group")?.import<(Set<Player>) -> Boolean>("inSameGroup")?.invoke(players)
                 ?: (players.size == 1))) {
-            return@listen broadcast(" ${team.coloredName()} 队非组队状态，不计算积分".with())
+            return@forEach broadcast(" {name} [green]队非组队状态，不计算积分[]".with("name" to team.coloredName()))
         }
     }
     val map = MapManager.current.id
@@ -188,4 +222,8 @@ listen<EventType.GameOverEvent> {
         }
         ratingCache.cleanUp()
     }
+}
+
+listen<EventType.ResetEvent> {
+    ratingCache.cleanUp()
 }
