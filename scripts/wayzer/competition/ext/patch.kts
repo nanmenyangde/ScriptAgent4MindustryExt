@@ -14,7 +14,7 @@ var patchesToLoad : Collection<MapPatch> = setOf()
 export(::patchesToLoad)
 
 @Savable
-var loadedPatches : Collection<MapPatch> = setOf()
+var loadedPatches : Collection<String> = setOf()
 
 registerVarForType<MapPatch>().apply {
     registerChild("name", "突变名", DynamicVar.obj { it.name })
@@ -22,7 +22,7 @@ registerVarForType<MapPatch>().apply {
     registerChild("env", "适用环境", DynamicVar.obj { it.env.joinToString { it.name } })
 }
 registerVar("scoreBroad.ext.mapPatch", "地图突变", DynamicVar.v {
-    "[violet]本地图带有以下突变：${loadedPatches.joinToString { it.name }}".takeIf { loadedPatches.isNotEmpty() }
+    "[violet]本地图带有以下突变：${loadedPatches.joinToString()}".takeIf { loadedPatches.isNotEmpty() }
 })
 
 BuiltinPatch.onLoad(thisContextScript())
@@ -30,7 +30,7 @@ BuiltinPatch.onLoad(thisContextScript())
 listen<EventType.WorldLoadBeginEvent> {
     if (patchesToLoad.isEmpty()) return@listen
     patchesToLoad.forEach{it()}
-    loadedPatches = patchesToLoad
+    loadedPatches = patchesToLoad.map { it.name }
     patchesToLoad = setOf()
 }
 

@@ -36,7 +36,10 @@ registerVarForType<Group>().apply {
 
 registerVarForType<Player>().apply {
     registerChild("group", "所在队伍", DynamicVar.obj { group[it.uuid()] })
-    registerChild("prefix.2groupName", "队伍名", DynamicVar.obj { group.getOrDefault(it.uuid(), null)?.name?.let { "<$it>" } })
+    registerChild("prefix.2groupName", "队伍名", DynamicVar.obj {
+        if (!enabled) return@obj null
+        group.getOrDefault(it.uuid(), null)?.name?.let { "<$it>" }
+    })
 }
 
 fun Group.disband() {
