@@ -183,7 +183,7 @@ listen<EventType.PlayerJoin> {
 
 listen<EventType.GameOverEvent> {
     if (!state.rules.pvp) return@listen
-    broadcast("[green]队伍[] {name} [green]获胜！[]".with("'name" to it.winner.coloredName()))
+    broadcast("[green]队伍[] {name} [green]获胜！[]".with("name" to it.winner.coloredName()))
     ranks.add(it.winner to it.winner.data().players.toSet())
     val gameTime by PlaceHold.reference<Duration>("state.gameTime")
     var rate = 1.0
