@@ -2,19 +2,15 @@ package wayzer.competition
 
 import arc.Events
 import cf.wayzer.placehold.PlaceHoldApi.with
-import cf.wayzer.scriptAgent.Event
 import cf.wayzer.scriptAgent.contextScript
 import cf.wayzer.scriptAgent.define.annotations.Savable
 import coreLibrary.lib.CommandInfo
 import coreLibrary.lib.config
 import coreLibrary.lib.util.loop
 import coreMindustry.lib.game
-import coreMindustry.lib.listen
 import coreMindustry.lib.player
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import mindustry.game.EventType
 import mindustry.game.Gamemode
 import mindustry.game.Team
@@ -24,7 +20,6 @@ import wayzer.MapInfo
 import wayzer.MapManager
 import wayzer.VoteEvent
 import kotlin.time.Duration.Companion.minutes
-import kotlin.time.Duration.Companion.seconds
 
 object CompetitionService {
     val script = contextScript<Competition>()
@@ -70,7 +65,7 @@ object CompetitionService {
         var prev = false
         loop(Dispatchers.game) {
             delay(1.minutes)
-            if (gaming && Groups.player.isEmpty) {
+            if (gaming && teams.allTeam.all { it.data().players.isEmpty }) {
                 if (prev) {
                     Events.fire(EventType.GameOverEvent(Team.derelict))
                 } else prev = true
