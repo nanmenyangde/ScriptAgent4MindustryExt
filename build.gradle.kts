@@ -47,7 +47,7 @@ repositories {
 
     //ScriptAgent
     if (!inChina) {
-        maven("https://maven.tinylake.tk/") //cloudFlare mirror
+        maven("https://maven.tinylake.tech/") //cloudFlare mirror
     } else {
         maven {
             url = uri("https://packages.aliyun.com/maven/repository/2102713-release-0NVzQH/")
