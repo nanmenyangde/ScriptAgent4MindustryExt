@@ -5,10 +5,9 @@ package wayzer.competition
 
 import cf.wayzer.placehold.DynamicVar
 import cf.wayzer.placehold.PlaceHoldApi.with
-import mindustry.game.Team
-import mindustryX.events.PlayerTeamChangedEvent
 import java.io.Serializable
 
+val base = contextScript<Module>()
 val teams = contextScript<wayzer.map.BetterTeam>()
 
 data class Group(var leader: Player, val member: MutableSet<Player>, var name: String) : Serializable
@@ -104,7 +103,7 @@ commands += CommandInfo(this, "join", "加入队伍") {
             broadcast("{name}[yellow]已加入队伍[][]".with("name" to player!!.coloredName()), players=it.member, quite=true)
         }
         group[player!!.uuid()] = group[leader.uuid()]!!
-        if (player!!.team() != leader.team()) changeTeam(player!!, leader.team())
+        if (player!!.team() != leader.team()) base.changeTeam(player!!, leader.team(), true)
     }
 }
 commands += CommandInfo(this, "leave", "离开队伍") {
@@ -148,26 +147,20 @@ commands += CommandInfo(this, "debug", "") {
     }
 }
 
-val changedByScript = mutableSetOf<Player>()
-fun changeTeam(p : Player, t : Team) {
-    changedByScript.add(p)
-    teams.changeTeam(p, t)
-    changedByScript.remove(p)
-}
-listen<PlayerTeamChangedEvent> {
-    val player = it.player
+listenTo<Module.PlayerTeamChangeEvent> {
     if (!CompetitionService.gaming && group[player.uuid()] != null) {
-        if (!changedByScript.contains(player)) {
-            if (!isLeader(player)) {
-                changeTeam(player, it.previous)
-                player.sendMessage("[yellow]仅队长可选择队伍".with(), MsgType.InfoMessage)
-            } else {
-                group[player.uuid()]!!.member.forEach { member ->
-                    if (member != player) {
-                        changeTeam(member, player.team())
+        if (!isLeader(player)) {
+            cancelled = true
+            player.sendMessage("[yellow]仅队长可选择队伍".with(), MsgType.InfoMessage)
+        } else {
+            group[player.uuid()]!!.member.forEach { member ->
+                if (member != player) {
+                    launch(Dispatchers.game) {
+                        base.changeTeam(member, player.team(), true)
                     }
                 }
             }
         }
     }
 }
+

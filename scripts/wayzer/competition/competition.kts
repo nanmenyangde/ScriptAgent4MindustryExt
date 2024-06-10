@@ -12,6 +12,9 @@ import mindustry.game.Gamemode
 import mindustry.game.Team
 import mindustry.io.SaveIO
 import wayzer.*
+import wayzer.competition.TeamControl.allTeam
+
+val base = contextScript<Module>()
 
 listenTo<GetNextMapEvent> {
     if (mapInfo !is MapInfo) return@listenTo
@@ -120,3 +123,28 @@ commands += CommandInfo(this, "lobby", "回到准备阶段") {
 }
 
 PermissionApi.registerDefault("competition.admin", group = "@admin")
+
+/**
+ * Rewrite of the command in betterTeam
+ */
+command("team", "管理指令: 修改自己或他人队伍(PVP模式)") {
+    usage = "[队伍,不填列出] [玩家3位id,默认自己]"
+    permission = "wayzer.ext.team.change"
+    body {
+        if (!state.rules.pvp) returnReply("[red]仅PVP模式可用".with())
+        val team = arg.getOrNull(0)?.toIntOrNull()?.let { Team.get(it) } ?: let {
+            val teams = allTeam.map { t -> "{id}({team.colorizeName}[])".with("id" to t.id, "team" to t) }
+            returnReply("[yellow]可用队伍: []{list}".with("list" to teams))
+        }
+        val player = arg.getOrNull(1)?.let {
+            depends("wayzer/user/shortID")?.import<(String) -> String?>("getUUIDbyShort")?.invoke(it)
+                ?.let { id -> Groups.player.find { it.uuid() == id } }
+                ?: returnReply("[red]找不到玩家,请使用/list查询正确的3位id".with())
+        } ?: player ?: returnReply("[red]请输入玩家ID".with())
+        base.changeTeam(player, team, true)
+        broadcast(
+            "[green]管理员更改了{player.name}[green]为{team.colorizeName}".with("player" to player, "team" to team)
+        )
+    }
+}
+

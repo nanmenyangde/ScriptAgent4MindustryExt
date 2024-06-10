@@ -1,8 +1,11 @@
+@file:Depends("wayzer/competition/module")
+
 package wayzer.competition
 
 import arc.Events
 import cf.wayzer.placehold.DynamicVar
 import cf.wayzer.scriptAgent.contextScript
+import cf.wayzer.scriptAgent.define.annotations.Depends
 import cf.wayzer.scriptAgent.define.annotations.Savable
 import cf.wayzer.scriptAgent.listenTo
 import coreLibrary.lib.registerVar
@@ -10,6 +13,7 @@ import coreLibrary.lib.with
 import coreMindustry.lib.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import mindustry.Vars
 import mindustry.game.EventType
 import mindustry.game.Team
@@ -17,11 +21,11 @@ import mindustry.gen.Groups
 import mindustry.gen.Iconc
 import mindustry.gen.Player
 import mindustry.world.blocks.storage.CoreBlock
-import mindustryX.events.PlayerTeamChangedEvent
 import wayzer.map.BetterTeam
 
 
 object TeamControl {
+    private val base = contextScript<Module>()
     private val teams = contextScript<BetterTeam>()
     private val ob = contextScript<wayzer.ext.Observer>()
     @Savable
@@ -50,7 +54,9 @@ object TeamControl {
         listen<EventType.PlayEvent> {
             if (CompetitionService.gaming) {
                 Groups.player.forEach {
-                    teams.changeTeam(it, teamsBak[it.uuid()] ?: teams.spectateTeam)
+                    runBlocking(Dispatchers.game) {
+                        base.changeTeam(it, teamsBak[it.uuid()] ?: teams.spectateTeam, true)
+                    }
                 }
             }
         }
@@ -67,15 +73,14 @@ object TeamControl {
                 else -> teamsBak[player.uuid()]
             }
         }
-        listen<PlayerTeamChangedEvent> {
-            if (gaming && it.player.team() == teams.spectateTeam && teamsBak[it.player.uuid()] != null) {
-                it.player.sendMessage("[yellow]比赛过程禁止切换为观察者".with(), MsgType.InfoMessage)
-                teams.changeTeam(it.player, teamsBak[it.player.uuid()]!!)
-                ob.obTeam.remove(it.player)
-                return@listen
+        listenTo<Module.PlayerTeamChangeEvent> {
+            if (gaming && to == teams.spectateTeam && teamsBak[player.uuid()] != null) {
+                player.sendMessage("[yellow]比赛过程禁止切换为观察者".with(), MsgType.InfoMessage)
+                cancelled = true
+                ob.obTeam.remove(player)
             }
             launch(Dispatchers.gamePost) {
-                it.player.updateTeamName()
+                player.updateTeamName()
             }
         }
         listen<EventType.CoreChangeEvent> { e ->
@@ -85,7 +90,9 @@ object TeamControl {
             if (team.data().cores.none { core -> core != e.core }) {
                 Groups.player.filter { it.team() == team }.forEach { p ->
                     teamsBak.remove(p.uuid())
-                    teams.changeTeam(p, teams.spectateTeam)
+                    runBlocking(Dispatchers.game) {
+                        base.changeTeam(p, teams.spectateTeam)
+                    }
                     p.name = nameBak[p.uuid()] ?: p.name
                     nameBak.remove(p.uuid())
                 }
@@ -99,7 +106,9 @@ object TeamControl {
         listen<EventType.GameOverEvent> {
             Groups.player.filter { nameBak.containsKey(it.uuid()) }.forEach { p ->
                 teamsBak.remove(p.uuid())
-                teams.changeTeam(p, teams.spectateTeam)
+                runBlocking(Dispatchers.game) {
+                    base.changeTeam(p, teams.spectateTeam)
+                }
                 p.name = nameBak[p.uuid()] ?: p.name
                 nameBak.remove(p.uuid())
             }
@@ -113,8 +122,8 @@ object TeamControl {
                     e.player.team() == team -> return@listen
                     !CompetitionService.selectTeam -> e.player.sendMessage("[yellow]选队已关闭，所有玩家将随机分配")
                     team !in allTeam -> e.player.sendMessage("[red]该队伍已被禁用")
-                    else -> {
-                        teams.changeTeam(e.player, team)
+                    else -> launch(Dispatchers.game) {
+                        base.changeTeam(e.player, team)
                     }
                 }
             }
