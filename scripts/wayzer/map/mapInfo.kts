@@ -1,8 +1,5 @@
 package wayzer.map
 
-import cf.wayzer.placehold.DynamicVar
-import mindustry.gen.Groups
-
 @Savable(false)
 val customModeIntroduce = mutableListOf<String>()
 customLoad(::customModeIntroduce, customModeIntroduce::addAll)
@@ -11,11 +8,12 @@ fun addModeIntroduce(mode: String, introduce: String) {
     if (customModeIntroduce.any { it.contains("===[gold]$mode[]===") }) return
     customModeIntroduce += "[magenta]===[gold]$mode[]===[white]\n$introduce"
 }
-export(this::addModeIntroduce)
+export(::addModeIntroduce)
 listen<EventType.ResetEvent> { customModeIntroduce.clear() }
 
-registerVar("scoreBroad.ext.customMode", "自定义模式Tip", DynamicVar.v {
-    "[violet]本地图有自定义模式,详情使用[orange]/mapInfo[]查看".takeIf { customModeIntroduce.isNotEmpty() }
+registerVar("scoreboard.ext.customMode", "自定义模式Tip", DynamicVar {
+    if (customModeIntroduce.isEmpty()) return@DynamicVar null
+    "{cK}本地图有自定义模式,详情使用{cV}/mapInfo[]查看".with()
 })
 
 
@@ -51,7 +49,7 @@ fun Player.showInfo() {
     Call.label(con, msg, 2 * 60f, core()?.x ?: 0f, core()?.y ?: 0f)
 }
 
-listen<EventType.PlayEvent> {
+listen<EventType.WorldLoadEvent> {
     launch(Dispatchers.gamePost) {
         Groups.player.forEach {
             it.showInfo()

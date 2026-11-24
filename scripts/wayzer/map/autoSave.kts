@@ -2,9 +2,9 @@ package wayzer.map
 
 import arc.files.Fi
 import arc.struct.StringMap
-import coreLibrary.lib.util.loop
 import mindustry.core.GameState
 import mindustry.io.SaveIO
+import mindustry.io.SaveOptions
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.logging.Level
@@ -14,12 +14,14 @@ val autoSaveRange = 100 until 106
 command("slots", "列出自动保存的存档") {
     body {
         val list = autoSaveRange.map { it to SaveIO.fileFor(it) }.filter { it.second.exists() }.map { (id, file) ->
-            "[red]{id}[]: [yellow]Save on {date:hh:mm}".with("id" to id, "date" to file.lastModified().let(::Date))
+            """[red]{id}[]: [yellow]Save on {t | date "HH:mm"}""".with(
+                "id" to id, "t" to file.lastModified().let(::Date)
+            )
         }
         reply(
             """
             |[green]===[white] 自动存档 [green]===
-            |{list:${"\n"}}
+            |{list|joinLines}
             |[green]===[white] {range} [green]===
         """.trimMargin().with("range" to autoSaveRange, "list" to list)
         )
@@ -50,7 +52,9 @@ onEnable {
                         "description", state.map.description(),
                         "author", state.map.author(),
                     )
-                    SaveIO.write(tmp, extTag)
+                    SaveIO.write(tmp, SaveOptions().apply {
+                        extraTags = extTag
+                    })
                     tmp.moveTo(SaveIO.fileFor(id))
                 } catch (e: Exception) {
                     logger.log(Level.SEVERE, "存档存档出错", e)

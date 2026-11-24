@@ -1,0 +1,94 @@
+package wayzer.user.ext
+
+import cf.wayzer.placehold.PlaceHoldApi.with
+import coreLibrary.lib.*
+import coreMindustry.lib.ClientOnly
+import coreMindustry.lib.broadcast
+import coreMindustry.lib.player
+import mindustry.Vars
+import mindustry.gen.Player
+import java.time.Duration
+
+object SkillPrecheck : CommandHandler {
+    private val mapDisabled get() = Vars.state.rules.tags.getBool("@noSkills")
+
+    override suspend fun CommandContext.handle() {
+        ClientOnly.handle()
+        if (mapDisabled) returnReply("[red]当前地图禁用技能".with())
+        if (player!!.dead()) returnReply("[red]死亡状态无法使用技能".with())
+    }
+}
+
+object SkillNoPvp : CommandHandler {
+    override suspend fun CommandContext.handle() {
+        if (Vars.state.rules.pvp) returnReply("[red]当前技能PVP模式禁用".with())
+    }
+}
+
+/** 技能冷却
+ * @param coolDown in ms, -1一局冷却
+ * */
+class SkillCooldown(val coolDown: Int = -1) : CommandHandler {
+    private val lastUsed = mutableMapOf<String, Long>()
+
+    init {
+        SkillCommands.allCooldown.add(this)
+    }
+
+    override suspend fun CommandContext.handle() {
+        if (!checkCoolDown()) CommandInfo.Return()
+    }
+
+    context(context: CommandContext)
+    fun checkCoolDown(): Boolean {
+        val key = context.player!!.uuid()
+        if (key in lastUsed) {
+            if (coolDown < 0) {
+                context.reply("[red]该技能每局限用一次".with())
+                return false
+            } else if (lastUsed[key]!! + coolDown >= System.currentTimeMillis()) {
+                context.reply(
+                    "[red]技能冷却，还剩{time 秒}".with(
+                        "time" to Duration.ofMillis(lastUsed[key]!! + coolDown - System.currentTimeMillis())
+                    )
+                )
+                return false
+            }
+        }
+        return true
+    }
+
+    context(context: CommandContext)
+    fun setCoolDown() {
+        val key = context.player!!.uuid()
+        lastUsed[key] = System.currentTimeMillis()
+    }
+
+    fun reset() = lastUsed.clear()
+}
+
+@Suppress("unused")
+object SkillCommands : Commands() {
+    val allCooldown = mutableListOf<SkillCooldown>()
+}
+
+//没有数据字段，暂时设为object
+data object SkillCommandScope
+
+context(_: SkillCommandScope)
+val CommandContext.caster: Player get() = player!!
+
+@Suppress("unused")
+context(_: SkillCommandScope)
+fun CommandContext.broadcastSkill(skill: String) = broadcast(
+    "[yellow][技能][green]{player.name}[white]使用了[green]{skill}[white]技能."
+        .with("player" to player, "skill" to skill), quite = true
+)
+
+@CommandInfo.CommandBuilder
+fun CommandInfo.skillBody(body: suspend context(SkillCommandScope) CommandContext.() -> Unit) {
+    body {
+        body.invoke(SkillCommandScope, context)
+        attrs.filterIsInstance<SkillCooldown>().singleOrNull()?.setCoolDown()
+    }
+}

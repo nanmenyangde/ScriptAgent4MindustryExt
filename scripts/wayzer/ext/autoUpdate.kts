@@ -1,9 +1,10 @@
-@file:Depends("wayzer/admin/restart", "计划重启")
+@file:Depends("wayzer/cmds/restart", "计划重启", soft = true)
 
 package wayzer.ext
 
 import arc.util.Interval
 import arc.util.Log
+import arc.util.Reflect
 import arc.util.serialization.Jval
 import mindustry.core.Version
 import mindustry.net.BeControl
@@ -17,8 +18,9 @@ val enableUpdate by config.key(false, "是否开启自动更新")
 val source by config.key("Anuken/Mindustry", "服务端来源，Github仓库")
 val onlyInNight by config.key(false, "仅在凌晨自动更新", "本地时间1:00到7:00")
 val useMirror by config.key(false, "使用镜像加速下载")
+val mirror by config.key("https://gh.tinylake.top", "GH镜像源")
 
-suspend fun download(url: String, file: File): Int = runInterruptible {
+suspend fun download(url: String, file: File): Int = runInterruptible(Dispatchers.IO) {
     val steam = URL(url).openStream()
     val buffer = ByteArray(128 * 1024)//128KB
     val logInterval = Interval()
@@ -38,23 +40,32 @@ suspend fun download(url: String, file: File): Int = runInterruptible {
     len
 }
 
+val isMdtX = source.contains("MindustryX")
+fun isNewVersion(build: String): Boolean {
+    if (isMdtX) kotlin.runCatching {
+        return build > Reflect.get(Version::class.java, "mdtXBuild")
+    }.onFailure {
+        logger.warning("获取MDTX版本失败，当前版本可能不是MDTX服务端: $it")
+    }
+    return build > Version.buildString()
+}
+
 onEnable {
     loop {
         if (enableUpdate) {
             if (!onlyInNight || LocalDateTime.now().hour in 1..6)
                 try {
-                    val txt = URL("https://api.github.com/repos/$source/releases").readText()
+                    val txt =
+                        URL("https://api.github.com/repos/$source/releases".let { if (useMirror) "$mirror/$it" else it }).readText()
                     val json = Jval.read(txt).asArray().first()
                     val newBuild = json.getString("tag_name", "")
-                    val (version, revision) = ("$newBuild.0").removePrefix("v")
-                        .split(".").map { it.toInt() }
-                    if (version > Version.build || (version == Version.build && revision > Version.revision)) {
+                    if (isNewVersion(newBuild.removePrefix("v"))) {
                         val asset = json.get("assets").asArray().find {
                             it.getString("name", "").contains("server", ignoreCase = true)
                         } ?: error("New version $newBuild, but can't find asset")
                         val url = asset.getString("browser_download_url", "")
                         try {
-                            update(newBuild, if (useMirror) "https://gh.tinylake.tk/$url" else url)
+                            update(newBuild, url.let { if (useMirror) "$mirror/$it" else it })
                             cancel()
                         } catch (e: Throwable) {
                             logger.warning("下载更新失败: $e")
@@ -80,20 +91,21 @@ suspend fun update(version: String, url: String) {
         throw e
     }
     Log.info("新版本 $version 下载完成: ${size / 1024}KB")
-    contextScript<wayzer.admin.Restart>().scheduleRestart("新版本更新 $version") {
-        dest.outputStream().use { output ->
-            tmp.inputStream().use { it.copyTo(output) }
-            output.flush()
+    depends("wayzer/cmds/restart")?.import<(String, Runnable) -> Unit>("scheduleRestart")
+        ?.invoke("新版本更新 $version") {
+            dest.outputStream().use { output ->
+                tmp.inputStream().use { it.copyTo(output) }
+                output.flush()
+            }
+            tmp.delete()
+            Log.info(
+                "&lcVersion downloaded, exiting. Note that if you are not using a auto-restart script, the server will not restart automatically."
+            )
         }
-        tmp.delete()
-        Log.info(
-            "&lcVersion downloaded, exiting. Note that if you are not using a auto-restart script, the server will not restart automatically."
-        )
-    }
 }
 
 command("forceUpdate", "强制更新服务器版本") {
-    permission = dotId
+    requirePermission(dotId)
     usage = "<url>"
     body {
         arg.firstOrNull()?.let { kotlin.runCatching { URL(it) }.getOrNull() } ?: replyUsage()

@@ -6,41 +6,59 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write  # 需要写权限来创建 release
+
 jobs:
-  Release:
+  release:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: denoland/setup-deno@v1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          deno-version: v1.x
-      - name: Generate Changelog
+          bun-version: latest
+
+      - name: Generate changelog
         id: changelog
-        run: deno run -A .github/actions/changelog.ts
+        run: bun run .github/actions/changelog.ts
         env:
           INPUT_TOKEN: ${{ github.token }}
 
-      - uses: actions/cache@v2
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          path: |
-            libs
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: deps-${{ hashFiles('dependencies.gradle.kts', '**/gradle-wrapper.properties') }}
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      # 保留自定义的 libs 缓存
+      - name: Cache libs directory
+        uses: actions/cache@v4
+        with:
+          path: libs
+          key: sa-deps-${{ hashFiles('scripts/build.gradle.kts') }}
           restore-keys: |
-            deps-
-      - name: Run unit tests and build JAR
+            sa-deps-
+
+      - name: Build release artifacts
         run: ./gradlew buildPlugin precompileZip allInOneJar
 
-      - name: upload artifacts
-        uses: softprops/action-gh-release@v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
           prerelease: true
-          name: "${{github.ref_name}} 预发布(Build ${{github.run_number}})"
-          body: ${{steps.changelog.outputs.releaseBody}}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.releaseBody }}
           files: |
             build/distributions/*
             build/libs/*

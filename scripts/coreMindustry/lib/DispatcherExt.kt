@@ -1,56 +1,50 @@
 package coreMindustry.lib
 
 import arc.Core
+import arc.util.Interval
+import cf.wayzer.scriptAgent.thisContextScript
+import cf.wayzer.scriptAgent.util.MainEventLoop
 import kotlinx.coroutines.*
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.logging.Level
 import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.coroutines.resume
 
 object MindustryDispatcher : CoroutineDispatcher() {
-    private var mainThread: Thread? = null
-    private var blockingQueue = ConcurrentLinkedQueue<Runnable>()
-
-    @Volatile
-    private var inBlocking = false
-
-    init {
-        Core.app.post {
-            mainThread = Thread.currentThread()
-        }
-    }
+    private val warnTimer = Interval()
 
     override fun isDispatchNeeded(context: CoroutineContext): Boolean {
-        if (Thread.currentThread() == mainThread || mainThread?.isAlive != true)
-            return false
-        return true
+        return MainEventLoop.isDispatchNeeded(context)
     }
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
-        if (inBlocking) {
-            blockingQueue.add(block)
-            return
-        }
-        Core.app.post(block)//Already has catcher in coroutine
+        return MainEventLoop.post(block)
     }
 
     @OptIn(InternalCoroutinesApi::class)
     override fun dispatchYield(context: CoroutineContext, block: Runnable) {
-        Core.app.post(block)
+        if (warnTimer[10 * 60f])
+            thisContextScript().logger.log(
+                Level.WARNING, "avoid use yield() in Dispatchers.game, use nextTick instead", Exception()
+            )
+        MainEventLoop.post(block)
     }
 
     /**
      * run in mindustry main thread
-     * call [Core.app.post()] when need
+     * call [MainEventLoop.post] when need
      * @see [runInMain] with catch to prevent close main thread
      */
     @Suppress("MemberVisibilityCanBePrivate")
     fun runInMainUnsafe(block: Runnable) {
-        if (Thread.currentThread() == mainThread || mainThread?.isAlive == false) block.run()
-        else Core.app.post(block)
+        if (!isDispatchNeeded(EmptyCoroutineContext)) block.run()
+        else MainEventLoop.post(block)
     }
 
     /**
      * run in mindustry main thread
-     * call [Core.app.post()] when need
+     * call [MainEventLoop.post] when need
      */
     fun runInMain(block: Runnable) {
         runInMainUnsafe {
@@ -62,35 +56,43 @@ object MindustryDispatcher : CoroutineDispatcher() {
         }
     }
 
+    @Deprecated("not pass CoroutineScope", ReplaceWith("safeBlocking(block)"), DeprecationLevel.HIDDEN)
     fun <T> safeBlocking(block: suspend CoroutineScope.() -> T): T {
-        return if (inBlocking) runBlocking(Dispatchers.game, block)
-        else runBlocking {
-            inBlocking = true
-            launch {
-                while (inBlocking || blockingQueue.isNotEmpty()) {
-                    blockingQueue.poll()?.run() ?: yield()
+        return safeBlocking {
+            coroutineScope {
+                block().also {
+                    cancelChildren(CancellationException("safeBlocking End, not use this coroutineScope"))
                 }
-            }
-            withContext(Dispatchers.game, block).also {
-                inBlocking = false
             }
         }
     }
 
+    fun <T> safeBlocking(block: suspend () -> T): T = MainEventLoop.runBlocking(block)
+
     object Post : CoroutineDispatcher() {
         override fun dispatch(context: CoroutineContext, block: Runnable) {
-            if (mainThread?.isAlive == false)
-                block.run()
-            else
-                Core.app.post(block)
+            MainEventLoop.post(block)
         }
     }
 }
 
-@Suppress("unused")
+@Suppress("unused", "UnusedReceiverParameter")
+@Deprecated("return CoroutineDispatcher instead MindustryDispatcher", level = DeprecationLevel.HIDDEN)
 val Dispatchers.game
     get() = MindustryDispatcher
+@Suppress("unused", "UnusedReceiverParameter")
+val Dispatchers.game: CoroutineDispatcher
+    @JvmName("gameV2")
+    get() = MindustryDispatcher
 
-@Suppress("unused")
+@Suppress("unused", "UnusedReceiverParameter")
+@Deprecated("Don't rely on Dispatcher for nextTick", ReplaceWith("Dispatchers.game"))
 val Dispatchers.gamePost
     get() = MindustryDispatcher.Post
+
+//suspend fun nextTick() = yield()
+suspend fun nextTick() {
+    suspendCancellableCoroutine { cont ->
+        Core.app.post { cont.resume(Unit) }
+    }
+}

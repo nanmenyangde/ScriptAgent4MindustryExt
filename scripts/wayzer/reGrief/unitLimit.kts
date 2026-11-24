@@ -63,14 +63,18 @@ fun checkNextWave() {
     val flySpawn = spawner.countFlyerSpawns()
     val groundSpawn = spawner.countGroundSpawns()
     val sum = state.rules.spawns.sum {
-        it.getSpawned(state.wave) * if (it.type.flying) flySpawn else groundSpawn
+        it.getSpawned(state.wave) * when {
+            it.spawn != -1 -> 1
+            it.type.flying -> flySpawn
+            else -> groundSpawn
+        }
     }
     if (sum >= 3000) {
         state.rules.spawns.clear()
         gameOverWave = state.wave
     }
 }
-listen<EventType.PlayEvent> { checkNextWave() }
+listen<EventType.WorldLoadEvent> { checkNextWave() }
 listen<EventType.WaveEvent> {
     if (gameOverWave > 0 && state.wave > gameOverWave && !state.gameOver) {
         broadcast("[red]到达终结波,自动投降".with())

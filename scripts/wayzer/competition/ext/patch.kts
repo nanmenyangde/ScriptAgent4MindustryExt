@@ -5,31 +5,37 @@
 package wayzer.competition.ext
 
 import cf.wayzer.placehold.DynamicVar
-import cf.wayzer.placehold.PlaceHoldApi.with
+import coreLibrary.lib.with
 import coreMindustry.PagedMenuBuilder
 import wayzer.VoteEvent
 import wayzer.competition.CompetitionService
+import wayzer.map.AssignTeamEvent
 
-var patchesToLoad : Collection<MapPatch> = setOf()
+var patchesToLoad: Collection<MapPatch> = setOf()
 export(::patchesToLoad)
 
 @Savable
-var loadedPatches : Collection<String> = setOf()
+var loadedPatches: Collection<String> = setOf()
 
 registerVarForType<MapPatch>().apply {
-    registerChild("name", "突变名", DynamicVar.obj { it.name })
-    registerChild("desc", "突变描述", DynamicVar.obj { it.desc })
-    registerChild("env", "适用环境", DynamicVar.obj { it.env.joinToString { it.name } })
+    registerChild("name", "突变名") { it.name }
+    registerChild("desc", "突变描述") { it.desc }
+    registerChild("env", "适用环境") { it.env.joinToString { it.name } }
 }
-registerVar("scoreBroad.ext.mapPatch", "地图突变", DynamicVar.v {
-    "[violet]本地图带有以下突变：${loadedPatches.joinToString()}".takeIf { loadedPatches.isNotEmpty() }
+registerVar("scoreBroad.ext.mapPatch", "地图突变", DynamicVar {
+    when {
+        patchesToLoad.isNotEmpty() -> "[violet]下局游戏将带有以下突变：${patchesToLoad.joinToString { it.name }}"
+        loadedPatches.isNotEmpty() -> "[violet]本地图带有以下突变：${loadedPatches.joinToString()}"
+        else -> null
+    }
 })
 
 BuiltinPatch.onLoad(thisContextScript())
 
 listen<EventType.WorldLoadBeginEvent> {
+    loadedPatches = setOf()
     if (patchesToLoad.isEmpty()) return@listen
-    patchesToLoad.forEach{it()}
+    patchesToLoad.forEach { it() }
     loadedPatches = patchesToLoad.map { it.name }
     patchesToLoad = setOf()
 }
@@ -40,7 +46,8 @@ listen<EventType.PlayerJoin> {
         var msg = ("" +
             "| [violet]本局游戏地图带有以下突变[]" +
         "").trimMargin()
-        for (patch in loadedPatches) {
+        for (patchName in loadedPatches) {
+            val patch = PatchManager.findOrNull(patchName) ?: continue
             msg += """
                 | [accent][gold]{mapPatch.name}[]
                 | [gold]{mapPatch.desc}[]
@@ -50,10 +57,10 @@ listen<EventType.PlayerJoin> {
     }
 }
 
+val commands = Commands()
 command("patch", "地图突变指令") {
     body(commands)
 }
-val commands = Commands()
 commands += CommandInfo(this, "list", "突变列表") {
     body {
         if (player != null) {
@@ -70,8 +77,8 @@ commands += CommandInfo(this, "list", "突变列表") {
             val page = arg.firstOrNull()?.toIntOrNull() ?: 1
             reply(menu("地图突变列表", PatchManager.patches, page, 10) {
                 "[light_yellow]{name} [white]{desc}  [light_cyan]{env}".with(
-                        "name" to it.name, "desc" to it.desc,
-                        "env" to it.env.joinToString { env -> env.name }
+                    "name" to it.name, "desc" to it.desc,
+                    "env" to it.env.joinToString { env -> env.name }
                 )
             })
         }
@@ -85,42 +92,40 @@ fun setPatch(patch: MapPatch) {
                     | [accent][gold]{mapPatch.name}[]
                     | [gold]{mapPatch.desc}[]
                 """.trimMargin().with("mapPatch" to patch)
-    broadcast(msg, quite=true)
-    broadcast(msg, MsgType.InfoMessage, quite=true)
+    broadcast(msg, quite = true)
+    broadcast(msg, MsgType.InfoMessage, quite = true)
 }
 
-ScriptManager.getScriptNullable("wayzer/competition/competition").let {
-    onEnable {
-        VoteEvent.VoteCommands += CommandInfo(this, "patch", "添加突变") {
-            body {
-                if (CompetitionService.loading || CompetitionService.gaming) returnReply("[red]只能在准备阶段添加".with())
-                val event = VoteEvent(
-                        script!!, player!!, this@CommandInfo.description,
-                        canVote = { it.team() != CompetitionService.teams.spectateTeam },
-                )
-                if (event.awaitResult()) {
-                    PatchManager.randomOrNull(state.rules)?.let{
-                        setPatch(it)
-                    } ?: player?.sendMessage("没有适用于当前地图的突变".with())
-                }
-            }
-        }
-        VoteEvent.VoteCommands.autoRemove(this)
-    }
-    contextScript<wayzer.competition.Competition>().commands += CommandInfo(this, "patch", "添加突变") {
-        usage = "[突变名，不填为随机]"
+onEnable {
+    VoteEvent.VoteCommands += CommandInfo(this, "patch", "添加突变") {
         body {
             if (CompetitionService.loading || CompetitionService.gaming) returnReply("[red]只能在准备阶段添加".with())
-            if (arg.isEmpty()) {
-                PatchManager.randomOrNull(state.rules)?.let{
+            val event = VoteEvent(
+                this@CommandInfo.script!!, player!!, this@CommandInfo.description,
+                canVote = { it.team() != AssignTeamEvent.spectateTeam },
+            )
+            if (event.awaitResult()) {
+                PatchManager.randomOrNull(state.rules)?.let {
                     setPatch(it)
                 } ?: player?.sendMessage("没有适用于当前地图的突变".with())
-            } else {
-                if (arg.size > 1) replyUsage()
-                PatchManager.findOrNull(arg[0])?.let {
-                    setPatch(it)
-                } ?: player?.sendMessage("未找到该突变".with())
             }
+        }
+    }
+    VoteEvent.VoteCommands.autoRemove(this)
+}
+CompetitionService.commands += CommandInfo(this, "patch", "添加突变") {
+    usage = "[突变名，不填为随机]"
+    body {
+        if (CompetitionService.loading || CompetitionService.gaming) returnReply("[red]只能在准备阶段添加".with())
+        if (arg.isEmpty()) {
+            PatchManager.randomOrNull(state.rules)?.let {
+                setPatch(it)
+            } ?: player?.sendMessage("没有适用于当前地图的突变".with())
+        } else {
+            if (arg.size > 1) replyUsage()
+            PatchManager.findOrNull(arg[0])?.let {
+                setPatch(it)
+            } ?: player?.sendMessage("未找到该突变".with())
         }
     }
 }

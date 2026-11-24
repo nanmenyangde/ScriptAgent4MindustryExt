@@ -1,0 +1,44 @@
+package cf.wayzer.scriptAgent.util
+
+import cf.wayzer.scriptAgent.*
+import java.io.File
+
+interface CommonMain {
+    private suspend fun doStart(): Boolean {
+        val mainScript = ScriptRegistry.getScriptInfo(Config.mainScript) ?: return false
+        ScriptManager.transactionV2 {
+            enable(mainScript)
+        }.printResult()
+        return true
+    }
+
+    fun initConfigInfo(rootDir: File, version: String, args: Array<String> = emptyArray()) {
+        Config.rootDir = rootDir
+        Config.version = version
+        Config.args = args
+    }
+
+    fun bootstrap() {
+        MainScriptsHelper.load()
+        ScriptRegistry.registries.add(CASPackScriptRegistry)
+        ScriptRegistry.registries.add(BuiltinScriptRegistry)
+        ScriptRegistry.scanRoot()
+        val foundMain = MainEventLoop.runBlocking { doStart() }
+        displayInfo(foundMain)
+    }
+
+    fun displayInfo(foundMain: Boolean) {
+        Config.logger.info("===========================")
+        Config.logger.info("     ScriptAgent ${Config.version}         ")
+        Config.logger.info("           By WayZer    ")
+        Config.logger.info("QQ交流群: 1033116078")
+        if (foundMain) {
+            val all = ScriptRegistry.allScripts { true }
+            Config.logger.info(
+                "共找到${all.size}脚本,加载成功${all.count { it.scriptState.loaded }},启用成功${all.count { it.scriptState.enabled }},出错${all.count { it.failReason != null }}"
+            )
+        } else
+            Config.logger.warning("未找到启动脚本(SAMain=${Config.mainScript}),请下载安装脚本包,以发挥本插件功能")
+        Config.logger.info("===========================")
+    }
+}

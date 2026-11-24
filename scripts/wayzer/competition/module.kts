@@ -1,28 +1,26 @@
+@file:Implement(CompetitionTeamService::class)
 @file:Depends("wayzer/map/betterTeam")
 
 package wayzer.competition
 
 import mindustry.game.Team
 import mindustryX.events.PlayerTeamChangedEvent
+import wayzer.map.TeamService
 
 /**
  * @author by nanmenyangde
  */
 name = "Competition Plugin"
 
-val competition by config.key(false, "是否启用pvp系统")
+val competitionEnabled by config.key(false, "是否启用pvp系统")
 val solo by config.key(false, "是否启用solo系统")
 
-val teams = contextScript<wayzer.map.BetterTeam>()
+val teams by Services.get<TeamService>().notNull
 
-class PlayerTeamChangeEvent(val player: Player,val from: Team,val to: Team) : Event, Event.Cancellable {
-    override var cancelled: Boolean = false
-    companion object : Event.Handler()
-}
 val forced = mutableSetOf<Player>()
 
 /** Should call in [Dispatchers.game] */
-suspend fun changeTeam(p : Player, t : Team, force: Boolean = false) {
+suspend fun changeTeam(p: Player, t: Team, force: Boolean = false) {
     if (!force) {
         val event = PlayerTeamChangeEvent(p, p.team(), t).emitAsync()
         if (event.cancelled) return
@@ -40,8 +38,27 @@ listen<PlayerTeamChangedEvent> {
     }
 }
 
-onEnable{
-    if (!competition) {
-        ScriptManager.unloadScript(thisContextScript(), "pvp系统未启用")
+onEnable {
+    if (!competitionEnabled) {
+        return@onEnable ScriptManager.disableScript(this, "pvp系统未启用")
+    }
+    val overriddenScripts = mutableMapOf<String, UserDemandState>()
+    ScriptManager.afterTransaction {
+        ScriptManager.transactionV2 {
+            listOf("wayzer/pvp/pvpChat", "wayzer/pvp/autoGameover").forEach { id ->
+                val script = ScriptManager.getScriptNullable(id) ?: return@forEach
+                if (!script.enabled) return@forEach
+                overriddenScripts[id] = script.scriptInfo.userDemand
+                disable(script.scriptInfo)
+            }
+        }
+    }
+    onDisable {
+        overriddenScripts.forEach { (id, demand) ->
+            ScriptManager.getScriptNullable(id)?.let {
+                ScriptManager.getTransaction(it.scriptInfo).setUserDemand(demand)
+                ScriptManager.enableScript(it)
+            }
+        }
     }
 }

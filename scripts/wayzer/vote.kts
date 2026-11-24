@@ -33,9 +33,9 @@ listen<EventType.PlayerChatEvent> {
 
 listen<EventType.ResetEvent> { VoteEvent.coolDowns.clear() }
 
-registerVar("scoreBroad.ext.vote", "投票状态显示", DynamicVar.v {
+registerVar("scoreboard.ext.vote", "投票状态显示", DynamicVar {
     VoteEvent.active.get()?.run {
-        "[violet]投票[orange]{desc}: {status} [violet]\uE867{left:秒}".with(
+        "{cK}投票{cV}{desc}:\n    {status} {cV}\uE867{left 秒}".with(
             "desc" to voteDesc,
             "status" to status(),
             "left" to Duration.between(Instant.now(), endTime)
@@ -46,6 +46,10 @@ registerVar("scoreBroad.ext.vote", "投票状态显示", DynamicVar.v {
 command("vote", "发起投票") {
     type = CommandType.Client
     aliases = listOf("投票")
+    attr {
+        if (VoteEvent.active.get() != null)
+            returnReply("[red]投票进行中".with())
+    }
     body(VoteEvent.VoteCommands)
 }
 listenTo<ScriptDisableEvent> {

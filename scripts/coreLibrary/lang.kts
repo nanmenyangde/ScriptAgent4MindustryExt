@@ -1,8 +1,5 @@
 package coreLibrary
 
-import cf.wayzer.placehold.DynamicVar
-import cf.wayzer.placehold.TemplateHandler
-import cf.wayzer.placehold.TemplateHandlerKey
 import java.io.File
 import java.util.*
 import kotlin.math.max
@@ -43,6 +40,7 @@ inner class Sentence(val raw: String) {
 private val file: File get() = Config.dataDir.resolve("lang.ini")
 val data = mutableMapOf<String, Sentence>()
 var lastSave = 0L
+var needSave = false
 fun save() {
     file.bufferedWriter().use { writer ->
         writer.appendLine("# ScriptAgent Lang File")
@@ -72,6 +70,7 @@ fun save() {
         }
     }
     lastSave = file.lastModified()
+    needSave = false
 }
 
 fun load() {
@@ -120,17 +119,24 @@ fun load() {
     lastSave = file.lastModified()
 }
 
-registerVarForType<CommandContext.ConsoleReceiver>().registerChild("lang", "控制台语言", DynamicVar.obj { console })
+registerVarForType<CommandContext.ConsoleReceiver>().registerChild("lang", "控制台语言") { console }
 
-registerVar(TemplateHandlerKey, "多语言处理", TemplateHandler.new {
-    val lang = getVarString("receiver.lang") ?: return@new it
-    data.getOrPut(it) {
-        Sentence(it).also { sentence ->
-            launch { NewSentenceEvent(sentence).emitAsync() }
-        }
-    }.get(lang)
-})
-
+onEnable {
+    val bak = PlaceHold.templateHandler
+    PlaceHold.templateHandler = h@{
+        val str = bak(it)
+        val lang = VarToken("receiver.lang").get()?.toString() ?: return@h str
+        data.getOrPut(str) {
+            needSave = true
+            Sentence(str).also { sentence ->
+                launch { NewSentenceEvent(sentence).emitAsync() }
+            }
+        }.get(lang)
+    }
+    onDisable {
+        PlaceHold.templateHandler = bak
+    }
+}
 
 val commands = Commands()
 commands += CommandInfo(null, "load", "加载语言文件".with()) {
@@ -154,16 +160,16 @@ commands += CommandInfo(null, "set", "设置控制台使用语言".with()) {
         reply("[green]控制台语言已设为 {v}".with("v" to console))
     }
 }
+command("lang", "多语言功能".with(), commands = Commands.controlCommand) {
+    requirePermission(dotId)
+    body(commands)
+}
 onEnable {
-    Commands.controlCommand += CommandInfo(this, "lang", "多语言功能".with()) {
-        permission = dotId
-        body(commands)
-    }
-    Commands.controlCommand.autoRemove(this)
     launch {
         load()
         while (isActive) {
             delay(60_000)
+            if (!needSave) continue
             if (lastSave < file.lastModified()) {
                 logger.warning("自动保存失败: 语言文件已改动，请使用/sa lang save手动保存")
                 continue

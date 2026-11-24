@@ -1,6 +1,6 @@
 package coreMindustry
 
-import cf.wayzer.scriptAgent.contextScript
+import cf.wayzer.scriptAgent.thisContextScript
 import cf.wayzer.scriptAgent.util.DSLBuilder
 import coreLibrary.lib.CommandInfo
 import coreLibrary.lib.util.calPage
@@ -52,6 +52,7 @@ open class MenuV2(
     private val menu = mutableListOf<MutableList<String>>()
     private val callback = mutableListOf<suspend () -> Unit>()
     var onCancel: suspend () -> Unit = {}
+    private var closed = false
 
     @MenuBuilderDsl
     var title = ""
@@ -78,7 +79,8 @@ open class MenuV2(
             }
         }
 
-    var columnPreRow = Int.MAX_VALUE
+    @MenuBuilderDsl
+    var columnPreRow = 1
 
     protected open suspend fun build() = block()
 
@@ -96,7 +98,7 @@ open class MenuV2(
     fun newRow() {
         if (menu.isNotEmpty()) {
             if (menu.last().size == 0) return
-            while (columnPreRow != Int.MAX_VALUE && menu.last().size < columnPreRow) {
+            while (menu.last().size < columnPreRow) {
                 option("", ::refresh)
             }
         }
@@ -115,10 +117,10 @@ open class MenuV2(
     fun subMenu(title: String, chooseTimeout: Duration? = 60.seconds, builder: suspend MenuV2.() -> Unit) {
         option(title) {
             this.title = title
-            menu.clear();callback.clear()
+            menu.clear(); callback.clear()
             builder.invoke(this)
             var back = false
-            newRow();option("返回") { back = true }
+            newRow(); option("返回") { back = true }
 
             send(rebuild = false)
             if (chooseTimeout == null) await()
@@ -153,8 +155,9 @@ open class MenuV2(
     private val _menuId = Random.nextInt()
 
     suspend fun send(rebuild: Boolean = true): MenuV2 {
+        closed = false
         if (rebuild) {
-            menu.clear();callback.clear()
+            menu.clear(); callback.clear()
             build()
         }
         while (menu.isNotEmpty() && menu.last().isEmpty()) menu.removeLast()
@@ -168,36 +171,41 @@ open class MenuV2(
     }
 
     suspend fun await() {
-        val ret = utilScript.nextEvent<Menu.MenuChooseEvent> { it.player == player && it.menuId == _menuId }.value
-        try {
-            (callback.getOrNull(ret) ?: onCancel).invoke()
-        } catch (e: RefreshReturn) {
-            send();return await()
+        while (true) {
+            val callback = script.nextEvent<MenuChooseEvent> { it.player == player && it.menuId == _menuId }.value
+                .let { callback.getOrNull(it) } ?: onCancel
+            try {
+                callback.invoke()
+                if (closed || !followup) break
+            } catch (e: RefreshReturn) {
+                send()
+            }
         }
     }
 
     /** @param chooseTimeout note this is only timeout for player select, not timeout for this function (due to callback and refresh)*/
     suspend fun awaitWithTimeout(chooseTimeout: Duration = 60.seconds) {
-        val callback = withTimeoutOrNull(chooseTimeout) {
-            //原版返回值，代表选中n个选项，可能 -1 代表主动关闭
-            val ret =
-                utilScript.nextEvent<Menu.MenuChooseEvent> { it.player == player && it.menuId == _menuId }.value
-            callback.getOrNull(ret)
-        } ?: onCancel
-        try {
-            callback()
-        } catch (e: RefreshReturn) {
-            send();return awaitWithTimeout(chooseTimeout)
+        while (true) {
+            val callback = withTimeoutOrNull(chooseTimeout) {
+                script.nextEvent<MenuChooseEvent> { it.player == player && it.menuId == _menuId }.value
+            }?.let { callback.getOrNull(it) } ?: onCancel
+            try {
+                callback.invoke()
+                if (closed || !followup) break
+            } catch (e: RefreshReturn) {
+                send()
+            }
         }
     }
 
     fun close() {
+        closed = true
         if (!followup) return
         Call.hideFollowUpMenu(_menuId)
     }
 
     companion object {
-        private val utilScript = contextScript<Menu>()
+        private val script = thisContextScript()
     }
 }
 
@@ -217,8 +225,8 @@ inline fun <T> MenuV2.renderPaged(
         itemRender(list[i])
     }
     column(3) {
-        option("<-") { selectedPage = page - 1;refresh() }
+        option("<-") { selectedPage = page - 1; refresh() }
         option("$page/$totalPage", this::refresh)
-        option("->") { selectedPage = page + 1;refresh() }
+        option("->") { selectedPage = page + 1; refresh() }
     }
 }

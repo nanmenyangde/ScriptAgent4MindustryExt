@@ -5,10 +5,11 @@
 
 package coreMindustry
 
-import coreLibrary.lib.util.withContextClassloader
 import org.jline.reader.*
+import org.jline.terminal.Terminal
 import org.jline.utils.AttributedString
 import java.io.ByteArrayOutputStream
+import java.io.Closeable
 import java.io.InterruptedIOException
 import java.io.PrintStream
 import java.util.logging.Level
@@ -48,25 +49,37 @@ class MyPrintStream(private val block: (String) -> Unit) : PrintStream(ByteArray
 object MyCompleter : Completer {
     override fun complete(reader: LineReader, line: ParsedLine, candidates: MutableList<Candidate>) {
         val cmd = line.line().substring(0, line.cursor()).split(' ')
-        runBlocking(Dispatchers.game) {
-            candidates += RootCommands.tabComplete(null, cmd).map {
-                Candidate(it)
+        val res = runBlocking(Dispatchers.game) {
+            Commands.Root.tabComplete {
+                arg = cmd
             }
+        }
+        candidates += res.map {
+            Candidate(it)
         }
     }
 }
 
 @OptIn(LoaderApi::class)
 suspend fun handleInput(reader: LineReader) {
+    // 命令执行过程可以通过ctrl-c取消
+    // 使用SupervisorJob切断和脚本的连接，因为脚本可能通过命令重载自己
+    val commandScope = CoroutineScope(coroutineContext + SupervisorJob() + CoroutineName("command-scope"))
+    reader.terminal.handle(Terminal.Signal.INT) {
+        if (commandScope.coroutineContext.job.children.none()) return@handle
+        reader.printAbove("Cancel current job...")
+        commandScope.coroutineContext.cancelChildren(CancellationException("User Interrupted"))
+    }
+
     var last = 0
     while (isActive) {
         val line = try {
             runInterruptible {
                 reader.readLine("> ").let(RootCommands::trimInput)
             }
-        } catch (e: InterruptedIOException) {
+        } catch (_: InterruptedIOException) {
             return
-        } catch (e: UserInterruptException) {
+        } catch (_: UserInterruptException) {
             if (!enabled) break//script disable
             if (last != 1) {
                 reader.printAbove("Interrupt again to force exit application")
@@ -75,19 +88,23 @@ suspend fun handleInput(reader: LineReader) {
             }
             reader.printAbove("force exit")
             exitProcess(255)
-        } catch (e: EndOfFileException) {
+        } catch (_: EndOfFileException) {
             if (last != 2) {
                 reader.printAbove("Catch EndOfFile, again to exit application")
                 last = 2
                 continue
             }
             reader.printAbove("exit")
-            ScriptManager.disableAll()
-            exitProcess(1)
+            @Suppress("CoroutineContextWithJob")//detach
+            launch(Job()) {
+                ScriptManager.disableAll()
+                exitProcess(1)
+            }
+            return
         }
         last = 0
         if (line.isEmpty()) continue
-        launch(Job()) {//ignore cancel
+        commandScope.launch {
             try {
                 RootCommands.handleInput(line, null)
             } catch (e: Throwable) {
@@ -106,7 +123,7 @@ fun start() {
         reader = withContextClassloader {
             LineReaderBuilder.builder()
                 .completer(MyCompleter)
-                .variable(LineReader.HISTORY_FILE,Config.cacheDir.resolve("console.history"))
+                .variable(LineReader.HISTORY_FILE, Config.cacheDir.resolve("console.history"))
                 .build()
         }
         val bakOut = System.out
@@ -124,11 +141,22 @@ fun start() {
 
 onEnable {
     Core.app.listeners.find { it.javaClass.simpleName == "ServerControl" }?.apply {
-        javaClass.getDeclaredField("serverInput")
-            .set(this, Runnable {
-                logger.info("Overwrite ServerControl.serverInput")
-                start()
-            })
+        javaClass.getDeclaredField("lineReader").apply {
+            isAccessible = true
+        }.get(this).apply {
+            (javaClass.methods.find { it.name == "getTerminal" }!!.invoke(this) as Closeable).apply {
+                close()
+            }
+        }
+        javaClass.getDeclaredField("hasTerminal").apply {
+            isAccessible = true
+        }.set(this, false)
+        javaClass.getDeclaredField("serverInput").apply {
+            isAccessible = true
+        }.set(this, Runnable {
+            logger.info("Overwrite ServerControl.serverInput")
+            start()
+        })
     }
     start()
 }

@@ -35,9 +35,9 @@ object BuiltinPatch {
                 ghostBlocks = false
             }
         }
-        mapPatch("失重环境","单位坠毁伤害变为一半", env=setOf(serpulo)) {
+        mapPatch("超重环境","单位坠毁伤害变为三倍", env=setOf(serpulo)) {
             applyRules {
-                unitCrashDamageMultiplier *= 0.5f
+                unitCrashDamageMultiplier *= 3f
             }
         }
         mapPatch("环保卫士","太阳能板发电量变为三倍", env=setOf(serpulo, sun), cond={ solarMultiplier>=1 && !bannedBlocks.contains(solarPanel) }) {

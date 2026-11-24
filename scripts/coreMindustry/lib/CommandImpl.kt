@@ -2,49 +2,55 @@
 
 package coreMindustry.lib
 
+import arc.Core
 import arc.struct.Seq
 import arc.util.CommandHandler
-import cf.wayzer.scriptAgent.*
+import cf.wayzer.placehold.VarString
+import cf.wayzer.scriptAgent.Config
 import cf.wayzer.scriptAgent.thisContextScript
 import cf.wayzer.scriptAgent.util.DSLBuilder
-import coreLibrary.lib.*
+import coreLibrary.lib.CommandContext
+import coreLibrary.lib.CommandInfo
+import coreLibrary.lib.Commands
+import coreLibrary.lib.handle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import mindustry.Vars.netServer
 import mindustry.gen.Player
 
-object RootCommands : Commands() {
-    override fun getSubCommands(context: CommandContext?): Map<String, CommandInfo> {
-        if (context == null) return super.getSubCommands(null)
-        //合并原版指令
-        val origin = (if (context.player != null) Config.clientCommands else Config.serverCommands)
-            .let { originHandler ->
-                originHandler.commandList.associate {
-                    it.text.lowercase() to CommandInfo(null, it.text, it.description) {
-                        usage = it.paramText
-                        body {
-                            (if (originHandler is MyCommandHandler) originHandler.origin else originHandler).handleMessage(
-                                originHandler.prefix + it.text + " " + arg.joinToString(" "),
-                                player
-                            )
-                        }
-                    }
-                }
-            }
-        return origin + subCommands.filterValues { if (context.player != null) it.type.client() else it.type.server() }
-    }
-
-    override fun addSub(name: String, command: CommandInfo, isAliases: Boolean) {
-        if (command.type.server())
-            Config.serverCommands.removeCommand(name)
-        if (command.type.client())
-            Config.clientCommands.removeCommand(name)
-        return super.addSub(name, command, isAliases)
-    }
+object RootCommands {
+    private val Config.clientCommands by DSLBuilder.lateInit<CommandHandler>()
+    private val Config.serverCommands by DSLBuilder.lateInit<CommandHandler>()
 
     init {
         arrayOf(Config.clientCommands, Config.serverCommands).forEach {
             it.removeCommand("help")
+        }
+        Commands.Root.subCommandOverwrite = { parent ->
+            val serverCommands = Config.serverCommands.let { cmds ->
+                cmds.commandList.associate {
+                    it.text.lowercase() to CommandInfo(null, it.text, it.description) {
+                        usage = it.paramText
+                        attr(NotForClient)
+                        body {
+                            cmds.handleMessage(cmds.prefix + it.text + " " + arg.joinToString(" "), null)
+                        }
+                    }
+                }
+            }
+            val clientCommands = Config.clientCommands.let { cmds ->
+                cmds.commandList.associate {
+                    it.text.lowercase() to CommandInfo(null, it.text, it.description) {
+                        usage = it.paramText
+                        attr(ClientOnly)
+                        body {
+                            cmds.handleMessage(cmds.prefix + it.text + " " + arg.joinToString(" "), player)
+                        }
+                    }
+                }
+            }
+            clientCommands + serverCommands + parent
         }
     }
 
@@ -62,18 +68,11 @@ object RootCommands : Commands() {
         }
     }
 
-    suspend fun tabComplete(player: Player?, args: List<String>): List<String> {
-        var result: List<String> = emptyList()
-        try {
-            onComplete(CommandContext().apply {
-                this.player = player
-                reply = {}
-                replyTabComplete = { result = it;CommandInfo.Return() }
-                arg = args
-            })
-        } catch (_: CommandInfo.Return) {
+    suspend fun tabComplete(player: Player, args: List<String>): List<String> {
+        return Commands.Root.tabComplete {
+            receiver = PlayerCommandReceiver(player)
+            arg = args
         }
-        return result
     }
 
     /**
@@ -84,21 +83,44 @@ object RootCommands : Commands() {
     suspend fun handleInput(text: String, player: Player?, prefix: String = "") {
         if (text.isEmpty()) return
         withContext(Dispatchers.game) {
-            RootCommands.invoke(CommandContext().apply {
-                this.player = player
-                hasPermission = {
-                    player == null || player.admin || player.hasPermission(it)
-                }
+            CommandContext.Command().apply {
+                receiver = if (player != null) PlayerCommandReceiver(player) else CommandContext.ConsoleReceiver
                 reply = { player.sendMessage(it, MsgType.Message) }
                 this.prefix = prefix.ifEmpty { "* " }
                 this.arg = text.removePrefix(prefix).split(' ')
-            })
+                Commands.Root.handle()
+            }
         }
+    }
+
+    private fun updateOriginCommandHandler(client: CommandHandler, server: CommandHandler) {
+        netServer?.apply {
+            javaClass.getDeclaredField("clientCommands").let {
+                it.isAccessible = true
+                it.set(this, client)
+            }
+        }
+        Core.app.listeners.find { it.javaClass.simpleName == "ServerControl" }?.let {
+            it.javaClass.getDeclaredField("handler").apply {
+                isAccessible = true
+                set(it, server)
+            }
+        }
+    }
+
+    fun hookGameHandler() {
+        thisContextScript().onDisable {
+            updateOriginCommandHandler(Config.clientCommands, Config.serverCommands)
+        }
+        updateOriginCommandHandler(
+            MyCommandHandler("/", Config.clientCommands),
+            MyCommandHandler("", Config.serverCommands)
+        )
     }
 }
 
 class MyCommandHandler(prefix: String, val origin: CommandHandler) : CommandHandler(prefix) {
-    override fun <T : Any?> register(
+    override fun <T> register(
         text: String,
         params: String,
         description: String,
@@ -107,7 +129,7 @@ class MyCommandHandler(prefix: String, val origin: CommandHandler) : CommandHand
         return origin.register(text, params, description, runner)
     }
 
-    override fun <T : Any?> register(text: String, description: String, runner: CommandRunner<T>): Command =
+    override fun <T> register(text: String, description: String, runner: CommandRunner<T>): Command =
         register(text, "", description, runner)
 
     override fun removeCommand(text: String) {
@@ -137,12 +159,34 @@ enum class CommandType {
     fun server() = this == Server || this == Both
 }
 
-var CommandInfo.type by DSLBuilder.dataKeyWithDefault { CommandType.Both }
+class PlayerCommandReceiver(val player: Player) : CommandContext.IReceiver {
+    override suspend fun hasPermission(node: String): Boolean {
+        return player.hasPermission(node)
+    }
+}
+
+@Deprecated("use CommandAttr")
+var CommandInfo.type: CommandType
+    get() = throw NotImplementedError("use CommandAttr")
+    set(value) {
+        if (value == CommandType.Client) attr(ClientOnly)
+        else if (value == CommandType.Server) attr(NotForClient)
+    }
+
+data object ClientOnly : Commands.Hidden {
+    override suspend fun CommandContext.visible(): Boolean = receiver is PlayerCommandReceiver
+}
+
+data object NotForClient : Commands.Hidden {
+    override suspend fun CommandContext.visible(): Boolean = receiver !is PlayerCommandReceiver
+}
 
 /**
  * null for console or other
  */
-var CommandContext.player by DSLBuilder.dataKey<Player>()
-fun CommandContext.reply(text: PlaceHoldString, type: MsgType = MsgType.Message, time: Float = 10f) {
+val CommandContext.player
+    get() = (receiver as? PlayerCommandReceiver)?.player
+
+fun CommandContext.reply(text: VarString, type: MsgType = MsgType.Message, time: Float = 10f) {
     player?.sendMessage(text, type, time) ?: reply(text)
 }

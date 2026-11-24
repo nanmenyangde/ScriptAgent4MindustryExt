@@ -1,5 +1,8 @@
-if (rootDir.parentFile.name == "branches")
-    rootProject.name = rootDir.name
-else
-    rootProject.name = "ScriptAgent4Mindustry"
+include("scripts")
 
+//file("scripts").listFiles()?.forEach {
+//    if (it.isDirectory && it.name.startsWith("@")) {
+//        include("scripts:@${it.name.substring(1)}")
+//        project(":scripts:@${it.name.substring(1)}").projectDir = it
+//    }
+//}
